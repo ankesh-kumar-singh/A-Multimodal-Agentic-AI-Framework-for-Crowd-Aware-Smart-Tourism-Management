@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.env
+
+# Data and model files (too large for GitHub)
+data/
+models/
+figures/
+
+# Node
+node_modules/
+dist/
+.DS_Store
+*.log
