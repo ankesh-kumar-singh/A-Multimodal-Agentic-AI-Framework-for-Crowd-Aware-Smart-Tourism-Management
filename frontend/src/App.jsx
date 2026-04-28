@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts'
 import { Train, MapPin, Clock, MessageSquare, TrendingDown, Users, Search,
          Send, Mic, MicOff, AlertCircle, Loader, Navigation, Info,
-         ChevronRight, Zap } from 'lucide-react'
+         ChevronRight, Zap, Volume2, VolumeX } from 'lucide-react'
 import * as api from './api'
 
 // ── Constants ─────────────────────────────────────────────────
@@ -11,10 +11,10 @@ const CROWD_CONFIG = {
   moderate: { bg: '#fef9c3', border: '#ca8a04', text: '#a16207', dot: '#ca8a04', label: 'Moderate' },
   crowded : { bg: '#fee2e2', border: '#dc2626', text: '#b91c1c', dot: '#dc2626', label: 'Crowded'  },
 }
-const DAY_NAMES = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
+const DAY_NAMES   = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']
 const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
 
-// ── Helpers ────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────
 const CrowdBadge = ({ level, size = 'md' }) => {
   const c  = CROWD_CONFIG[level] || CROWD_CONFIG.moderate
   const sz = size === 'sm' ? 'text-xs px-2 py-0.5' : 'text-sm px-3 py-1'
@@ -37,9 +37,9 @@ const Card = ({ children, className = '' }) => (
   </div>
 )
 
-// ── Map using Leaflet (loaded via CDN in index.html) ────────────
+// ── Map using Leaflet (loaded via CDN in index.html) ──────────
 const StationMap = ({ stations, selected, result }) => {
-  const mapRef = useRef(null)
+  const mapRef      = useRef(null)
   const mapInstance = useRef(null)
   const markersRef  = useRef([])
 
@@ -60,7 +60,7 @@ const StationMap = ({ stations, selected, result }) => {
       const { station_lat: lat, station_lon: lon, station, crowd } = result
       if (lat && lon) {
         const color = CROWD_CONFIG[crowd?.level]?.dot || '#2166AC'
-        const icon = window.L.divIcon({
+        const icon  = window.L.divIcon({
           html: `<div style="width:16px;height:16px;background:${color};border:2.5px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.4)"></div>`,
           iconSize: [16,16], iconAnchor: [8,8]
         })
@@ -94,7 +94,7 @@ const StationMap = ({ stations, selected, result }) => {
   )
 }
 
-// ── Voice input hook ────────────────────────────────────────────
+// ── Voice INPUT hook (speech → text) ─────────────────────────
 const useVoiceInput = (onResult) => {
   const [listening, setListening] = useState(false)
   const recRef = useRef(null)
@@ -110,10 +110,10 @@ const useVoiceInput = (onResult) => {
       return
     }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition
-    recRef.current  = new SR()
-    recRef.current.continuous      = false
-    recRef.current.interimResults  = false
-    recRef.current.lang            = 'en-US'
+    recRef.current                  = new SR()
+    recRef.current.continuous       = false
+    recRef.current.interimResults   = false
+    recRef.current.lang             = 'en-US'
     recRef.current.onresult = (e) => {
       onResult(e.results[0][0].transcript)
       setListening(false)
@@ -132,27 +132,61 @@ const useVoiceInput = (onResult) => {
 // ══════════════════════════════════════════════════════════════
 export default function App() {
   const now = new Date()
-  const [tab,       setTab]      = useState('predict')
-  const [stations,  setStations] = useState([])
-  const [stFilter,  setStFilter] = useState('')
-  const [station,   setStation]  = useState('')
-  const [hour,      setHour]     = useState(now.getHours())
-  const [dow,       setDow]      = useState(now.getDay() === 0 ? 6 : now.getDay() - 1) // Mon=0
-  const [month,     setMonth]    = useState(now.getMonth())
-  const [isWeekend, setIsWeekend]= useState(now.getDay() === 0 || now.getDay() === 6 ? 1 : 0)
-  const [loading,   setLoading]  = useState(false)
-  const [result,    setResult]   = useState(null)
-  const [error,     setError]    = useState('')
-  const [messages,  setMessages] = useState([{
+
+  // ── State ─────────────────────────────────────────────────
+  const [tab,       setTab]       = useState('predict')
+  const [stations,  setStations]  = useState([])
+  const [stFilter,  setStFilter]  = useState('')
+  const [station,   setStation]   = useState('')
+  const [hour,      setHour]      = useState(now.getHours())
+  const [dow,       setDow]       = useState(now.getDay() === 0 ? 6 : now.getDay() - 1)
+  const [month,     setMonth]     = useState(now.getMonth())
+  const [isWeekend, setIsWeekend] = useState(now.getDay() === 0 || now.getDay() === 6 ? 1 : 0)
+  const [loading,   setLoading]   = useState(false)
+  const [result,    setResult]    = useState(null)
+  const [error,     setError]     = useState('')
+  const [messages,  setMessages]  = useState([{
     role: 'assistant',
     text: '👋 Hi! I can help you navigate NYC subway crowds. Ask me anything like:\n• "Is Times Square station busy at 6pm?"\n• "¿Está llena la estación 34th Street a las 8am?"\n• "Quelle est la fréquentation de Canal St le matin?"'
   }])
-  const [chatInput, setChatInput]= useState('')
+  const [chatInput, setChatInput] = useState('')
   const chatEnd = useRef(null)
 
+  // ── Voice OUTPUT state (text → speech) ───────────────────
+  const [isMuted, setIsMuted] = useState(false)
+  const synthRef = useRef(window.speechSynthesis)
+
+  // ── speakText: cleans text and speaks it ──────────────────
+  const speakText = useCallback((text) => {
+    if (isMuted || !window.speechSynthesis) return
+    synthRef.current.cancel()
+    const clean = text
+      .replace(/[\u{1F000}-\u{1FFFF}]/gu, '')   // remove emojis
+      .replace(/[•*_~`#]/g, '')                  // remove markdown
+      .replace(/\n+/g, '. ')                     // newlines → pauses
+      .trim()
+    if (!clean) return
+    const utterance   = new SpeechSynthesisUtterance(clean)
+    utterance.rate    = 1.0
+    utterance.pitch   = 1.0
+    utterance.volume  = 1.0
+    // Pick a natural English voice if available
+    const voices      = synthRef.current.getVoices()
+    const preferred   = voices.find(v =>
+      v.lang.startsWith('en') && v.name.toLowerCase().includes('natural')
+    ) || voices.find(v => v.lang.startsWith('en')) || voices[0]
+    if (preferred) utterance.voice = preferred
+    synthRef.current.speak(utterance)
+  }, [isMuted])
+
+  // ── Stop speech when tab changes or component unmounts ────
+  useEffect(() => { return () => synthRef.current.cancel() }, [])
+  useEffect(() => { synthRef.current.cancel() }, [tab])
+
+  // ── Voice INPUT hook ──────────────────────────────────────
   const voice = useVoiceInput((text) => setChatInput(prev => prev + text))
 
-  // load stations
+  // ── Load stations ─────────────────────────────────────────
   useEffect(() => {
     api.getStations()
       .then(r => {
@@ -163,11 +197,12 @@ export default function App() {
       .catch(() => setError('Backend not running. Start uvicorn first.'))
   }, [])
 
+  // ── Scroll chat to bottom ─────────────────────────────────
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // auto weekend
+  // ── Auto-set weekend from day of week ─────────────────────
   useEffect(() => {
     setIsWeekend(dow >= 5 ? 1 : 0)
   }, [dow])
@@ -181,9 +216,9 @@ export default function App() {
     if (!station) return
     setLoading(true); setError(''); setResult(null)
     try {
-      const r = await api.predict(station, hour, dow, month+1, isWeekend)
+      const r = await api.predict(station, hour, dow, month + 1, isWeekend)
       setResult({ type: 'predict', ...r.data })
-    } catch(e) {
+    } catch (e) {
       setError(e.response?.data?.detail || 'Prediction failed.')
     } finally { setLoading(false) }
   }
@@ -192,9 +227,9 @@ export default function App() {
     if (!station) return
     setLoading(true); setError(''); setResult(null)
     try {
-      const r = await api.recommend(station, hour, dow, month+1, isWeekend)
+      const r = await api.recommend(station, hour, dow, month + 1, isWeekend)
       setResult({ type: 'recommend', ...r.data })
-    } catch(e) {
+    } catch (e) {
       setError(e.response?.data?.detail || 'Recommendation failed.')
     } finally { setLoading(false) }
   }
@@ -206,13 +241,15 @@ export default function App() {
     setMessages(m => [...m, { role: 'user', text: msg }])
     setLoading(true)
     try {
-      const r = await api.chat(msg, station, hour, dow, month+1, isWeekend)
-      setMessages(m => [...m, { role: 'assistant', text: r.data.message }])
-    } catch(e) {
-      setMessages(m => [...m, {
-        role: 'assistant',
-        text: '⚠️ Error. Make sure GEMINI_API_KEY is set in your .env file.'
-      }])
+      const r           = await api.chat(msg, station, hour, dow, month + 1, isWeekend)
+      const assistantMsg = r.data.message
+      // Add message to chat
+      setMessages(m => [...m, { role: 'assistant', text: assistantMsg }])
+      // ── Speak the reply ───────────────────────────────────
+      speakText(assistantMsg)
+    } catch (e) {
+      const errMsg = '⚠️ Error. Make sure GEMINI_API_KEY is set in your .env file.'
+      setMessages(m => [...m, { role: 'assistant', text: errMsg }])
     } finally { setLoading(false) }
   }
 
@@ -226,14 +263,16 @@ export default function App() {
         </label>
         <div className="relative">
           <Search size={13} className="absolute left-3 top-2.5 text-gray-400" />
-          <input className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl
-            text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
+          <input
+            className="w-full pl-8 pr-3 py-2 border border-gray-200 rounded-xl
+              text-sm focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
             placeholder="Search 378 stations..."
             value={stFilter}
             onChange={e => setStFilter(e.target.value)} />
         </div>
-        <select className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm
-          focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
+        <select
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm
+            focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
           value={station}
           onChange={e => setStation(e.target.value)}
           size={5}>
@@ -260,29 +299,32 @@ export default function App() {
       {/* Day of week */}
       <div className="space-y-1.5">
         <label className="text-sm font-semibold text-gray-700">Day of week</label>
-        <select className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm
-          focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
+        <select
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm
+            focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
           value={dow} onChange={e => setDow(parseInt(e.target.value))}>
-          {DAY_NAMES.map((d,i) => <option key={i} value={i}>{d}</option>)}
+          {DAY_NAMES.map((d, i) => <option key={i} value={i}>{d}</option>)}
         </select>
       </div>
 
       {/* Month */}
       <div className="space-y-1.5">
         <label className="text-sm font-semibold text-gray-700">Month</label>
-        <select className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm
-          focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
+        <select
+          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm
+            focus:outline-none focus:ring-2 focus:ring-blue-400 bg-gray-50"
           value={month} onChange={e => setMonth(parseInt(e.target.value))}>
-          {MONTH_NAMES.map((m,i) => <option key={i} value={i}>{m}</option>)}
+          {MONTH_NAMES.map((m, i) => <option key={i} value={i}>{m}</option>)}
         </select>
       </div>
     </div>
   )
 
+  // ════════════════════════════════════════════════════════════
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
 
-      {/* ── Header ────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────── */}
       <header className="bg-white border-b border-gray-100 shadow-sm sticky top-0 z-10">
         <div className="max-w-6xl mx-auto px-4 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -309,13 +351,13 @@ export default function App() {
 
       <div className="max-w-6xl mx-auto px-4 py-5 space-y-4">
 
-        {/* ── Tab bar ─────────────────────────────────────── */}
+        {/* ── Tab bar ───────────────────────────────────────── */}
         <div className="flex gap-1.5 bg-white border border-gray-100
           rounded-2xl p-1.5 shadow-sm w-fit">
           {[
-            { id: 'predict',   icon: TrendingDown,    label: 'Predict'    },
-            { id: 'recommend', icon: Navigation,      label: 'Recommend'  },
-            { id: 'chat',      icon: MessageSquare,   label: 'AI Chat'    },
+            { id: 'predict',   icon: TrendingDown,  label: 'Predict'   },
+            { id: 'recommend', icon: Navigation,    label: 'Recommend' },
+            { id: 'chat',      icon: MessageSquare, label: 'AI Chat'   },
           ].map(({ id, icon: Icon, label }) => (
             <button key={id}
               onClick={() => { setTab(id); setResult(null); setError('') }}
@@ -331,7 +373,7 @@ export default function App() {
           ))}
         </div>
 
-        {/* ── Error ───────────────────────────────────────── */}
+        {/* ── Error ─────────────────────────────────────────── */}
         {error && (
           <div className="flex items-center gap-2 bg-red-50 border border-red-200
             text-red-700 px-4 py-3 rounded-xl text-sm font-medium">
@@ -340,9 +382,9 @@ export default function App() {
           </div>
         )}
 
-        {/* ════════════════════════════════════════════════════
+        {/* ══════════════════════════════════════════════════════
             PREDICT TAB
-           ════════════════════════════════════════════════════ */}
+           ══════════════════════════════════════════════════════ */}
         {tab === 'predict' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="p-5 space-y-4">
@@ -366,9 +408,7 @@ export default function App() {
                 <Card className="p-10 flex flex-col items-center justify-center
                   text-gray-300 gap-3">
                   <Train size={48} />
-                  <p className="text-sm text-gray-400">
-                    Select a station and hit Predict
-                  </p>
+                  <p className="text-sm text-gray-400">Select a station and hit Predict</p>
                 </Card>
               )}
               {loading && (
@@ -383,34 +423,32 @@ export default function App() {
                       <div>
                         <p className="text-xs text-gray-400 uppercase tracking-wide">Station</p>
                         <p className="text-xl font-bold text-gray-900">{result.prediction?.station}</p>
-                        <p className="text-sm text-gray-500 mt-0.5">{hour}:00 · {DAY_NAMES[dow]} · {MONTH_NAMES[month]}</p>
+                        <p className="text-sm text-gray-500 mt-0.5">
+                          {hour}:00 · {DAY_NAMES[dow]} · {MONTH_NAMES[month]}
+                        </p>
                       </div>
                       <CrowdBadge level={result.crowd?.level} />
                     </div>
-
                     <div className="grid grid-cols-3 gap-3">
                       {[
-                        { label: 'Predicted Footfall', val: result.prediction?.predicted_footfall?.toLocaleString(), color: 'blue' },
-                        { label: 'Station Average',    val: result.prediction?.station_mean?.toLocaleString(),        color: 'gray' },
-                        { label: 'Capacity Level',     val: `${result.crowd?.capacity_pct}%`,                        color: result.crowd?.level === 'crowded' ? 'red' : result.crowd?.level === 'sparse' ? 'green' : 'yellow' },
-                      ].map(({ label, val, color }) => (
+                        { label: 'Predicted Footfall', val: result.prediction?.predicted_footfall?.toLocaleString() },
+                        { label: 'Station Average',    val: result.prediction?.station_mean?.toLocaleString() },
+                        { label: 'Capacity Level',     val: `${result.crowd?.capacity_pct}%` },
+                      ].map(({ label, val }) => (
                         <div key={label}
                           className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
                           <p className="text-xs text-gray-500 mb-1">{label}</p>
-                          <p className={`text-lg font-bold text-${color}-600`}>{val}</p>
+                          <p className="text-lg font-bold text-gray-800">{val}</p>
                         </div>
                       ))}
                     </div>
-
-                    {/* Capacity bar */}
                     <div className="mt-4">
                       <div className="flex justify-between text-xs text-gray-500 mb-1">
                         <span>Capacity indicator</span>
                         <span>{result.crowd?.capacity_pct}%</span>
                       </div>
                       <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                          className="h-full rounded-full transition-all duration-500"
+                        <div className="h-full rounded-full transition-all duration-500"
                           style={{
                             width: `${result.crowd?.capacity_pct}%`,
                             background: CROWD_CONFIG[result.crowd?.level]?.dot
@@ -418,16 +456,26 @@ export default function App() {
                       </div>
                     </div>
                   </Card>
-                  <StationMap stations={stations} selected={station} result={result.type === 'predict' ? { station_lat: stations.find(s=>s.name===station)?.lat, station_lon: stations.find(s=>s.name===station)?.lon, station, crowd: result.crowd, footfall: result.prediction?.predicted_footfall, alternatives: [] } : null} />
+                  <StationMap
+                    stations={stations}
+                    selected={station}
+                    result={{
+                      station_lat : stations.find(s => s.name === station)?.lat,
+                      station_lon : stations.find(s => s.name === station)?.lon,
+                      station,
+                      crowd       : result.crowd,
+                      footfall    : result.prediction?.predicted_footfall,
+                      alternatives: [],
+                    }} />
                 </>
               )}
             </div>
           </div>
         )}
 
-        {/* ════════════════════════════════════════════════════
+        {/* ══════════════════════════════════════════════════════
             RECOMMEND TAB
-           ════════════════════════════════════════════════════ */}
+           ══════════════════════════════════════════════════════ */}
         {tab === 'recommend' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="p-5 space-y-4">
@@ -450,9 +498,7 @@ export default function App() {
               {!result && !loading && (
                 <Card className="p-10 flex flex-col items-center text-gray-300 gap-3">
                   <MapPin size={48} />
-                  <p className="text-sm text-gray-400">
-                    Find the best time and station to visit
-                  </p>
+                  <p className="text-sm text-gray-400">Find the best time and station to visit</p>
                 </Card>
               )}
               {loading && (
@@ -462,7 +508,6 @@ export default function App() {
               )}
               {result?.type === 'recommend' && (
                 <>
-                  {/* Current station */}
                   <Card className="p-5">
                     <div className="flex items-center justify-between">
                       <div>
@@ -480,7 +525,6 @@ export default function App() {
                     </div>
                   </Card>
 
-                  {/* Best time chart */}
                   <Card className="p-5">
                     <h3 className="font-semibold text-gray-800 mb-1 flex items-center gap-2">
                       <Clock size={15} className="text-green-500" />
@@ -495,18 +539,21 @@ export default function App() {
                       Searched: {result.best_time?.window_searched}
                     </p>
                     <ResponsiveContainer width="100%" height={160}>
-                      <BarChart data={Object.entries(result.best_time?.all_predictions || {}).map(([h,v]) => ({ hour:`${h}:00`, val: Math.round(v), h: parseInt(h) }))}
+                      <BarChart
+                        data={Object.entries(result.best_time?.all_predictions || {})
+                          .map(([h, v]) => ({ hour: `${h}:00`, val: Math.round(v), h: parseInt(h) }))}
                         margin={{ top:4, right:4, left:0, bottom:0 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="hour" tick={{ fontSize:10, fill:'#666' }} />
                         <YAxis tick={{ fontSize:10, fill:'#666' }} />
-                        <Tooltip formatter={v => [`${v} pax`,'Footfall']}
+                        <Tooltip
+                          formatter={v => [`${v} pax`, 'Footfall']}
                           contentStyle={{ borderRadius:'8px', border:'1px solid #e5e7eb' }} />
                         <Bar dataKey="val" radius={[4,4,0,0]}>
-                          {Object.entries(result.best_time?.all_predictions||{}).map(([h],i) => (
+                          {Object.entries(result.best_time?.all_predictions || {}).map(([h], i) => (
                             <Cell key={i}
-                              fill={parseInt(h)===result.best_time?.best_hour ? '#16a34a'
-                                  : parseInt(h)===result.hour_used          ? '#dc2626'
+                              fill={parseInt(h) === result.best_time?.best_hour ? '#16a34a'
+                                  : parseInt(h) === result.hour_used            ? '#dc2626'
                                   : '#93c5fd'} />
                           ))}
                         </Bar>
@@ -525,7 +572,6 @@ export default function App() {
                     </div>
                   </Card>
 
-                  {/* Alternatives */}
                   {result.alternatives?.length > 0 && (
                     <Card className="p-5">
                       <h3 className="font-semibold text-gray-800 mb-3 flex items-center gap-2">
@@ -541,8 +587,7 @@ export default function App() {
                               <p className="font-semibold text-gray-800 text-sm">{alt.station}</p>
                               <p className="text-xs text-gray-400">
                                 {alt.distance_km} km away
-                                {alt.pct_less_crowded > 0 &&
-                                  ` · ${alt.pct_less_crowded}% quieter`}
+                                {alt.pct_less_crowded > 0 && ` · ${alt.pct_less_crowded}% quieter`}
                               </p>
                             </div>
                             <div className="text-right">
@@ -557,7 +602,6 @@ export default function App() {
                     </Card>
                   )}
 
-                  {/* Map */}
                   <Card className="p-4">
                     <p className="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
                       <MapPin size={14} className="text-blue-500" /> Station map
@@ -578,9 +622,9 @@ export default function App() {
           </div>
         )}
 
-        {/* ════════════════════════════════════════════════════
+        {/* ══════════════════════════════════════════════════════
             CHAT TAB
-           ════════════════════════════════════════════════════ */}
+           ══════════════════════════════════════════════════════ */}
         {tab === 'chat' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
             <Card className="p-5 space-y-4">
@@ -601,16 +645,19 @@ export default function App() {
                 <p className="text-xs font-semibold text-gray-600">Context (optional):</p>
                 <div className="relative">
                   <Search size={12} className="absolute left-2.5 top-2.5 text-gray-400" />
-                  <input className="w-full pl-7 pr-2 py-2 border border-gray-200
-                    rounded-xl text-xs bg-gray-50 focus:outline-none focus:ring-1
-                    focus:ring-blue-400"
+                  <input
+                    className="w-full pl-7 pr-2 py-2 border border-gray-200 rounded-xl
+                      text-xs bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-400"
                     placeholder="Search station..."
                     value={stFilter}
                     onChange={e => setStFilter(e.target.value)} />
                 </div>
-                <select className="w-full border border-gray-200 rounded-xl px-2 py-1.5
-                  text-xs bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-400"
-                  value={station} onChange={e => setStation(e.target.value)} size={4}>
+                <select
+                  className="w-full border border-gray-200 rounded-xl px-2 py-1.5
+                    text-xs bg-gray-50 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                  value={station}
+                  onChange={e => setStation(e.target.value)}
+                  size={4}>
                   {filteredStations.map(s => (
                     <option key={s.name} value={s.name}>{s.name}</option>
                   ))}
@@ -620,10 +667,12 @@ export default function App() {
 
             <div className="lg:col-span-2">
               <Card className="flex flex-col" style={{ height: '560px' }}>
+
                 {/* Messages */}
                 <div className="flex-1 overflow-y-auto p-4 space-y-3">
                   {messages.map((m, i) => (
-                    <div key={i} className={`flex ${m.role==='user' ? 'justify-end' : 'justify-start'}`}>
+                    <div key={i}
+                      className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                       {m.role === 'assistant' && (
                         <div className="w-7 h-7 bg-gradient-to-br from-blue-500 to-purple-600
                           rounded-full flex items-center justify-center mr-2 flex-shrink-0 mt-0.5">
@@ -649,8 +698,9 @@ export default function App() {
                       <div className="bg-gray-50 border border-gray-100 px-4 py-3
                         rounded-2xl rounded-bl-sm flex gap-1 items-center">
                         {[0,1,2].map(i => (
-                          <span key={i} className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
-                            style={{ animationDelay: `${i*0.15}s` }} />
+                          <span key={i}
+                            className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
+                            style={{ animationDelay: `${i * 0.15}s` }} />
                         ))}
                       </div>
                     </div>
@@ -671,27 +721,47 @@ export default function App() {
                       onKeyDown={e => e.key === 'Enter' && !loading && handleChat()} />
                   </div>
 
-                  {/* Voice button */}
+                  {/* Voice INPUT button (mic) */}
                   {voice.supported && (
-                    <button onClick={voice.toggle}
+                    <button
+                      onClick={voice.toggle}
                       className={`p-2.5 rounded-2xl border transition ${
                         voice.listening
                           ? 'bg-red-500 border-red-500 text-white animate-pulse'
                           : 'border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-500'
                       }`}
-                      title={voice.listening ? 'Stop recording' : 'Start voice input'}>
+                      title={voice.listening ? 'Stop recording' : 'Voice input'}>
                       {voice.listening ? <MicOff size={16} /> : <Mic size={16} />}
                     </button>
                   )}
 
-                  <button onClick={handleChat}
+                  {/* Mute/Unmute voice OUTPUT button (speaker) */}
+                  <button
+                    onClick={() => {
+                      if (!isMuted) synthRef.current.cancel()
+                      setIsMuted(m => !m)
+                    }}
+                    className={`p-2.5 rounded-2xl border transition ${
+                      isMuted
+                        ? 'border-gray-200 text-gray-400 hover:border-blue-300 hover:text-blue-500'
+                        : 'border-blue-300 text-blue-500 bg-blue-50'
+                    }`}
+                    title={isMuted ? 'Unmute voice reply' : 'Mute voice reply'}>
+                    {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
+                  </button>
+
+                  {/* Send button */}
+                  <button
+                    onClick={handleChat}
                     disabled={loading || !chatInput.trim()}
-                    className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600
-                      hover:to-blue-700 disabled:from-blue-300 disabled:to-blue-300
+                    className="bg-gradient-to-r from-blue-500 to-blue-600
+                      hover:from-blue-600 hover:to-blue-700
+                      disabled:from-blue-300 disabled:to-blue-300
                       text-white px-4 py-2.5 rounded-2xl transition shadow-sm">
                     <Send size={16} />
                   </button>
                 </div>
+
               </Card>
             </div>
           </div>
