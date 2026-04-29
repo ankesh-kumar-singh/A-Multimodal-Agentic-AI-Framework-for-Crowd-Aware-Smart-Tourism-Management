@@ -1163,7 +1163,7 @@ export default function App() {
       <div style={{ height: '2px', background: T.ink }} />
       <header style={{ background: T.bg, padding: '14px 26px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '14px' }}>
-          <span style={{ fontFamily: T.display, fontSize: '22px', fontWeight: 800, letterSpacing: '-1px', color: T.ink }}>MTA FOOTFALL</span>
+          <span style={{ fontFamily: T.display, fontSize: '22px', fontWeight: 800, letterSpacing: '-1px', color: T.ink }}>AI-POWERED NEW YORK CITY SUBWAY TOURISM GUIDE</span>
           <span style={{ fontFamily: T.mono, fontSize: '11px', color: T.muted, letterSpacing: '.06em' }}>NYC · 378 STATIONS</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
